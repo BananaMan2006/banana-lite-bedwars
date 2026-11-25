@@ -15,7 +15,7 @@ local GuiService = game:GetService("GuiService")
 local player = Players.LocalPlayer
 
 if shared.BananaLite then shared.BananaLite:Destroy() end
-local app = {alive=true, connections={}, modules={}, dependencies={}, version="0.1.0"}
+local app = {alive=true, connections={}, modules={}, dependencies={}, version="0.1.1", purchases=0, upgrades=0}
 shared.BananaLite = app
 local scheduler, purchaseGate, kitGate = Core.scheduler(), Core.gate(), Core.gate()
 local function connect(signal, fn)
@@ -66,7 +66,7 @@ local function setEnabled(id, value)
 end
 function app:SetEnabled(id, value) setEnabled(id,value==true) end
 function app:Diagnostics()
-    local out={version=self.version,ready=self.ready,alive=self.alive,connections=#self.connections,features={},dependencies={}}
+    local out={version=self.version,ready=self.ready,alive=self.alive,connections=#self.connections,features={},dependencies={},purchases=self.purchases,upgrades=self.upgrades,purchaseState=purchaseGate.state,upgradeState=kitGate.state}
     for id,m in pairs(self.modules) do out.features[id]={enabled=m.enabled,errors=m.errors} end
     for name in pairs(self.dependencies) do out.dependencies[name]=true end
     return out
@@ -387,10 +387,7 @@ local function remoteRequest(name,payload,gate,token)
 end
 local function currentKit()
     local b=state().Bedwars
-    local value=b and b.kit
-    if type(value)=="string" then return value=="frost_hammer_kit" end
-    if type(value)=="table" then for _,v in pairs(value) do if v=="frost_hammer_kit" then return true end end end
-    return false
+    return Core.hasKit(b and b.kit,"frost_hammer_kit") or Core.hasKit(player:GetAttribute("PlayingAsKits"),"frost_hammer_kit")
 end
 local catalogIds={"wool_white","leather_chestplate","iron_chestplate","diamond_chestplate","emerald_chestplate","wood_sword","stone_sword","iron_sword","diamond_sword","emerald_sword","wood_pickaxe","stone_pickaxe","iron_pickaxe","diamond_pickaxe","wood_axe","stone_axe","iron_axe","diamond_axe","bow","arrow"}
 local function eligible(item)
@@ -410,7 +407,12 @@ end
 module("autobuy","AutoBuy · gear and supplies",0.6,{"Knit","Store","Shop","Remotes"},function()
     local owned=counts()
     if purchaseGate.state~="idle" then
-        purchaseGate:observe(os.clock(),(owned[purchaseGate.key] or 0)>purchaseGate.before)
+        local confirmed=(owned[purchaseGate.key] or 0)>purchaseGate.before
+        purchaseGate:observe(os.clock(),confirmed)
+        if confirmed then
+            app.purchases=app.purchases+1
+            report("AutoBuy: inventory confirmed "..purchaseGate.key)
+        end
         if purchaseGate.state=="uncertain" then
             report("AutoBuy paused: purchase outcome unknown. Check inventory; no duplicate request sent.")
             setEnabled("autobuy",false)
@@ -442,7 +444,9 @@ end)
 module("autokit","AutoKit · Adetunde hammer",0.6,{"Knit","Store","HammerUtil","HammerMeta","Remotes"},function()
     local tiers=app.dependencies.HammerUtil.getUpgradesFromHammer(player) or {}
     if kitGate.state~="idle" then
-        kitGate:observe(os.clock(),(tiers[kitGate.key] or 0)>kitGate.before)
+        local confirmed=(tiers[kitGate.key] or 0)>kitGate.before
+        kitGate:observe(os.clock(),confirmed)
+        if confirmed then app.upgrades=app.upgrades+1; report("AutoKit: confirmed "..kitGate.key.." tier "..tiers[kitGate.key]) end
         if kitGate.state=="uncertain" then report("AutoKit paused: upgrade outcome unknown."); setEnabled("autokit",false) end
         return
     end
@@ -544,5 +548,5 @@ task.spawn(function()
         for id,enabled in pairs(resume.enabled) do if enabled==true then setEnabled(id,true) end end
         report("Restored your enabled features after teleport.")
     end
-    print("[BananaLite] BUILD 0.1.0 loaded; no game hooks installed")
+    print("[BananaLite] BUILD "..app.version.." loaded; no game hooks installed")
 end)

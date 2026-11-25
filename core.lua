@@ -5,6 +5,17 @@ function Core.finite(n)
     return type(n) == "number" and n == n and n > -math.huge and n < math.huge
 end
 
+function Core.hasKit(value, wanted)
+    if type(value)=="table" then
+        for _,kit in pairs(value) do if kit==wanted then return true end end
+    elseif type(value)=="string" then
+        for kit in value:gmatch("[^,]+") do
+            if kit:match("^%s*(.-)%s*$")==wanted then return true end
+        end
+    end
+    return false
+end
+
 function Core.canAfford(item, balances)
     return type(item) == "table" and type(item.itemType) == "string"
         and type(item.currency) == "string" and Core.finite(item.price)

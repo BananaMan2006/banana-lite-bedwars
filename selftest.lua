@@ -6,6 +6,9 @@ return function(Core)
         print("[BananaLite test] PASS " .. name)
     end
     local item = {itemType = "wool_white", currency = "iron", price = 8, amount = 16}
+    test("multi-kit includes Adetunde", function() return Core.hasKit("none,frost_hammer_kit,other","frost_hammer_kit") end)
+    test("kit name must match exactly", function() return not Core.hasKit("fake_frost_hammer_kit","frost_hammer_kit") end)
+    test("missing kit is inactive", function() return not Core.hasKit(nil,"frost_hammer_kit") end)
     test("reject NaN price", function() return not Core.canAfford({itemType="x",currency="iron",price=0/0},{iron=100}) end)
     test("reject infinite balance", function() return not Core.canAfford(item, {iron=math.huge}) end)
     test("reject negative price", function() return not Core.canAfford({itemType="x",currency="iron",price=-1},{iron=100}) end)
