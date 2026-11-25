@@ -1,0 +1,59 @@
+return function(Core)
+    local passed = 0
+    local function test(name, fn)
+        assert(fn(), "FAILED: " .. name)
+        passed = passed + 1
+        print("[BananaLite test] PASS " .. name)
+    end
+    local item = {itemType = "wool_white", currency = "iron", price = 8, amount = 16}
+    test("reject NaN price", function() return not Core.canAfford({itemType="x",currency="iron",price=0/0},{iron=100}) end)
+    test("reject infinite balance", function() return not Core.canAfford(item, {iron=math.huge}) end)
+    test("reject negative price", function() return not Core.canAfford({itemType="x",currency="iron",price=-1},{iron=100}) end)
+    test("exact balance accepted", function() return Core.canAfford(item,{iron=8}) end)
+    test("unaffordable purchase skipped", function() return not Core.canAfford(item,{iron=7}) end)
+    test("missing pickaxe starts at wood", function() return Core.nextTier({"wood_pickaxe","stone_pickaxe"},{}) == "wood_pickaxe" end)
+    test("highest owned tier used", function() return Core.nextTier({"wood","stone","iron"},{wood=1,stone=1}) == "iron" end)
+    test("maxed gear stops buying", function() return Core.nextTier({"wood","stone"},{stone=1}) == nil end)
+    test("wool floor takes priority", function() return Core.choosePurchase({iron=100},{wool_white=item}) == item end)
+    test("stock target stops wool", function() return Core.choosePurchase({iron=100,wool_white=64},{wool_white=item}) == nil end)
+    test("no affordable items is idle", function() return Core.choosePurchase({iron=0},{wool_white=item}) == nil end)
+    local meta = {strength={tiers={{price=3}}},speed={tiers={{price=3}}},shield={tiers={{price=3}}}}
+    test("hammer chooses strength on tie", function() return Core.chooseHammer({strength=0,speed=0,shield=0},meta,3) == "strength" end)
+    test("hammer no overspending", function() return Core.chooseHammer({strength=0},meta,2) == nil end)
+    test("hammer unknown state is idle", function() return Core.chooseHammer({},meta,100) == nil end)
+    test("hammer maxed tier skipped", function() return Core.chooseHammer({strength=1,speed=0},meta,3) == "speed" end)
+    test("phrases trim and ignore blank lines", function() local p=Core.phrases("  hello  \n\nworld"); return #p==2 and p[1]=="hello" end)
+    test("phrases size bounded", function() return #Core.phrases(string.rep("a",181))==0 end)
+    test("unreachable ballistic arc rejected", function() return Core.arc(10000,0,100,196.2)==nil end)
+    test("ballistic result reaches target", function()
+        local angle,t=Core.arc(30,5,100,196.2)
+        return angle and math.abs(math.cos(angle)*100*t-30)<0.001 and math.abs(math.sin(angle)*100*t-98.1*t*t-5)<0.001
+    end)
+    test("zero-gravity trajectory", function() local a,t=Core.arc(3,4,5,0); return math.abs(t-1)<0.0001 and a>0 end)
+    test("nonfinite arc rejected", function() return Core.arc(10,0,math.huge,196.2)==nil end)
+    local gate = Core.gate()
+    local token = gate:begin(0,"wool",0)
+    test("purchase serialized", function() return gate:begin(1,"armor",0)==nil end)
+    gate:observe(9,false)
+    test("timeout blocks duplicate purchase", function() return gate.state=="uncertain" and gate:begin(10,"wool",0)==nil end)
+    gate:reply(token,true,10)
+    test("acceptance waits for inventory", function() return gate.state=="accepted" and gate:begin(10,"wool",0)==nil end)
+    gate:observe(11,true)
+    test("observed purchase unlocks with cooldown", function() return gate:begin(11,"wool",16)==nil and gate:begin(12,"wool",16)~=nil end)
+    gate:reply(token,false,13)
+    test("stale reply cannot unlock newer purchase", function() return gate.state=="pending" end)
+    gate:reply(gate.generation,false,13)
+    test("rejection backs off", function() return gate:begin(14,"wool",16)==nil and gate:begin(15,"wool",16)~=nil end)
+    local s, runs = Core.scheduler(), 0
+    s:add("test",1,function() end)
+    local function dispatch(j) runs=runs+1; j.busy=false end
+    s:step(0,dispatch)
+    test("disabled scheduler is idle", function() return runs==0 end)
+    s.jobs.test.enabled=true
+    s:step(0,dispatch); s:step(0.5,dispatch); s:step(100,dispatch)
+    test("scheduler never catches up in a burst", function() return runs==2 end)
+    s.jobs.test.busy=true; s:step(200,dispatch)
+    test("scheduler prevents overlapping jobs", function() return runs==2 end)
+    print("[BananaLite] SELFTEST "..passed.."/"..passed.." PASSED")
+    return passed
+end
