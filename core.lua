@@ -16,6 +16,18 @@ function Core.hasKit(value, wanted)
     return false
 end
 
+function Core.catalogVisible(item, hasKit, queue)
+    if not item or item.disabled or item.lockedByForge then return false end
+    if item.requiresKit and #item.requiresKit>0 then
+        local permitted=false
+        for _,kit in ipairs(item.requiresKit) do if hasKit(kit) then permitted=true; break end end
+        if not permitted then return false end
+    end
+    for _,kit in ipairs(item.ignoredByKit or {}) do if hasKit(kit) then return false end end
+    for _,disabled in ipairs(item.disabledInQueue or {}) do if disabled==queue then return false end end
+    return true
+end
+
 function Core.canAfford(item, balances)
     return type(item) == "table" and type(item.itemType) == "string"
         and type(item.currency) == "string" and Core.finite(item.price)
@@ -46,8 +58,9 @@ function Core.choosePurchase(owned, catalog, options)
     if not options.hammer then add(Core.nextTier({"wood_sword", "stone_sword", "iron_sword", "diamond_sword", "emerald_sword"}, owned)) end
     add(Core.nextTier({"wood_pickaxe", "stone_pickaxe", "iron_pickaxe", "diamond_pickaxe"}, owned))
     add(Core.nextTier({"wood_axe", "stone_axe", "iron_axe", "diamond_axe"}, owned))
-    if (owned.bow or 0) == 0 and (owned.crossbow or 0) == 0 and (owned.tactical_crossbow or 0) == 0 then add("bow") end
-    if (owned.bow or 0) + (owned.crossbow or 0) + (owned.tactical_crossbow or 0) > 0 and (owned.arrow or 0) < 24 then add("arrow") end
+    local bows=(owned.wood_bow or 0)+(owned.wood_crossbow or 0)+(owned.tactical_crossbow or 0)
+    if bows==0 then add("wood_bow") end
+    if bows>0 and (owned.arrow or 0)<24 then add("arrow") end
     if (owned[options.woolType or "wool_white"] or 0) < 64 then add("wool_white") end
     for _, id in ipairs(order) do
         local item = candidate(id)
@@ -75,8 +88,8 @@ end
 function Core.phrases(text)
     local result = {}
     for line in (text or ""):gmatch("[^\r\n]+") do
-        line = line:match("^%s*(.-)%s*$")
-        if #line > 0 and #line <= 180 and #result < 30 then table.insert(result, line) end
+        local trimmed = line:match("^%s*(.-)%s*$")
+        if #trimmed > 0 and #trimmed <= 180 and #result < 30 then table.insert(result, trimmed) end
     end
     return result
 end

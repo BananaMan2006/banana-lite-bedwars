@@ -9,6 +9,16 @@ return function(Core)
     test("multi-kit includes Adetunde", function() return Core.hasKit("none,frost_hammer_kit,other","frost_hammer_kit") end)
     test("kit name must match exactly", function() return not Core.hasKit("fake_frost_hammer_kit","frost_hammer_kit") end)
     test("missing kit is inactive", function() return not Core.hasKit(nil,"frost_hammer_kit") end)
+    local function isHammer(kit) return kit=="frost_hammer_kit" end
+    test("other kit exclusions permit armor", function() return Core.catalogVisible({ignoredByKit={"bigman","tinker"}},isHammer,"bedwars_16v16") end)
+    test("own kit exclusion respected", function() return not Core.catalogVisible({ignoredByKit={"frost_hammer_kit"}},isHammer,"bedwars_16v16") end)
+    test("required kit respected", function() return not Core.catalogVisible({requiresKit={"miner"}},isHammer,"bedwars_16v16") end)
+    test("disabled queue respected", function() return not Core.catalogVisible({disabledInQueue={"bedwars_16v16"}},isHammer,"bedwars_16v16") end)
+    local bow={itemType="wood_bow",currency="iron",price=24}
+    test("native bow catalog key selected", function() return Core.choosePurchase({iron=24},{wood_bow=bow})==bow end)
+    test("owned native bow prevents rebuy", function() return Core.choosePurchase({iron=24,wood_bow=1},{wood_bow=bow})==nil end)
+    local arrow={itemType="arrow",currency="iron",price=16}
+    test("native bow enables arrow restocking", function() return Core.choosePurchase({iron=16,wood_bow=1},{arrow=arrow})==arrow end)
     test("reject NaN price", function() return not Core.canAfford({itemType="x",currency="iron",price=0/0},{iron=100}) end)
     test("reject infinite balance", function() return not Core.canAfford(item, {iron=math.huge}) end)
     test("reject negative price", function() return not Core.canAfford({itemType="x",currency="iron",price=-1},{iron=100}) end)

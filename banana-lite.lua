@@ -1,4 +1,4 @@
--- BananaLite 0.1.0 | original source | normal gameplay limits
+-- BananaLite 0.1.1 | original source | normal gameplay limits
 local Core = (function()
 -- Original BananaLite decision logic. No Roblox services or network calls.
 local Core = {}
@@ -16,6 +16,18 @@ function Core.hasKit(value, wanted)
         end
     end
     return false
+end
+
+function Core.catalogVisible(item, hasKit, queue)
+    if not item or item.disabled or item.lockedByForge then return false end
+    if item.requiresKit and #item.requiresKit>0 then
+        local permitted=false
+        for _,kit in ipairs(item.requiresKit) do if hasKit(kit) then permitted=true; break end end
+        if not permitted then return false end
+    end
+    for _,kit in ipairs(item.ignoredByKit or {}) do if hasKit(kit) then return false end end
+    for _,disabled in ipairs(item.disabledInQueue or {}) do if disabled==queue then return false end end
+    return true
 end
 
 function Core.canAfford(item, balances)
@@ -48,8 +60,9 @@ function Core.choosePurchase(owned, catalog, options)
     if not options.hammer then add(Core.nextTier({"wood_sword", "stone_sword", "iron_sword", "diamond_sword", "emerald_sword"}, owned)) end
     add(Core.nextTier({"wood_pickaxe", "stone_pickaxe", "iron_pickaxe", "diamond_pickaxe"}, owned))
     add(Core.nextTier({"wood_axe", "stone_axe", "iron_axe", "diamond_axe"}, owned))
-    if (owned.bow or 0) == 0 and (owned.crossbow or 0) == 0 and (owned.tactical_crossbow or 0) == 0 then add("bow") end
-    if (owned.bow or 0) + (owned.crossbow or 0) + (owned.tactical_crossbow or 0) > 0 and (owned.arrow or 0) < 24 then add("arrow") end
+    local bows=(owned.wood_bow or 0)+(owned.wood_crossbow or 0)+(owned.tactical_crossbow or 0)
+    if bows==0 then add("wood_bow") end
+    if bows>0 and (owned.arrow or 0)<24 then add("arrow") end
     if (owned[options.woolType or "wool_white"] or 0) < 64 then add("wool_white") end
     for _, id in ipairs(order) do
         local item = candidate(id)
@@ -77,8 +90,8 @@ end
 function Core.phrases(text)
     local result = {}
     for line in (text or ""):gmatch("[^\r\n]+") do
-        line = line:match("^%s*(.-)%s*$")
-        if #line > 0 and #line <= 180 and #result < 30 then table.insert(result, line) end
+        local trimmed = line:match("^%s*(.-)%s*$")
+        if #trimmed > 0 and #trimmed <= 180 and #result < 30 then table.insert(result, trimmed) end
     end
     return result
 end
@@ -158,6 +171,16 @@ return function(Core)
     test("multi-kit includes Adetunde", function() return Core.hasKit("none,frost_hammer_kit,other","frost_hammer_kit") end)
     test("kit name must match exactly", function() return not Core.hasKit("fake_frost_hammer_kit","frost_hammer_kit") end)
     test("missing kit is inactive", function() return not Core.hasKit(nil,"frost_hammer_kit") end)
+    local function isHammer(kit) return kit=="frost_hammer_kit" end
+    test("other kit exclusions permit armor", function() return Core.catalogVisible({ignoredByKit={"bigman","tinker"}},isHammer,"bedwars_16v16") end)
+    test("own kit exclusion respected", function() return not Core.catalogVisible({ignoredByKit={"frost_hammer_kit"}},isHammer,"bedwars_16v16") end)
+    test("required kit respected", function() return not Core.catalogVisible({requiresKit={"miner"}},isHammer,"bedwars_16v16") end)
+    test("disabled queue respected", function() return not Core.catalogVisible({disabledInQueue={"bedwars_16v16"}},isHammer,"bedwars_16v16") end)
+    local bow={itemType="wood_bow",currency="iron",price=24}
+    test("native bow catalog key selected", function() return Core.choosePurchase({iron=24},{wood_bow=bow})==bow end)
+    test("owned native bow prevents rebuy", function() return Core.choosePurchase({iron=24,wood_bow=1},{wood_bow=bow})==nil end)
+    local arrow={itemType="arrow",currency="iron",price=16}
+    test("native bow enables arrow restocking", function() return Core.choosePurchase({iron=16,wood_bow=1},{arrow=arrow})==arrow end)
     test("reject NaN price", function() return not Core.canAfford({itemType="x",currency="iron",price=0/0},{iron=100}) end)
     test("reject infinite balance", function() return not Core.canAfford(item, {iron=math.huge}) end)
     test("reject negative price", function() return not Core.canAfford({itemType="x",currency="iron",price=-1},{iron=100}) end)
@@ -225,7 +248,10 @@ local Input = game:GetService("UserInputService")
 local Tags = game:GetService("CollectionService")
 local Chat = game:GetService("TextChatService")
 local GuiService = game:GetService("GuiService")
+local bootDeadline=os.clock()+30
+repeat task.wait(0.1) until (game:IsLoaded() and Players.LocalPlayer) or os.clock()>=bootDeadline
 local player = Players.LocalPlayer
+assert(game:IsLoaded() and player,"BananaLite: game startup timed out; load again after joining")
 
 if shared.BananaLite then shared.BananaLite:Destroy() end
 local app = {alive=true, connections={}, modules={}, dependencies={}, version="0.1.1", purchases=0, upgrades=0}
@@ -501,7 +527,7 @@ end)
 local teleportQueued=false
 connect(player.OnTeleport,function(teleportState)
     if teleportState==Enum.TeleportState.Failed then teleportQueued=false; return end
-    if teleportState~=Enum.TeleportState.Started or teleportQueued or not app.modules.autoqueue.enabled then return end
+    if teleportQueued or not app.modules.autoqueue.enabled then return end
     local queueFunction=queue_on_teleport or queueonteleport
     if type(queueFunction)~="function" then report("AutoQueue reload is unavailable in this executor."); return end
     local enabled={}
@@ -510,6 +536,7 @@ connect(player.OnTeleport,function(teleportState)
     local resumeCode=string.format("shared.BananaLiteResume=game:GetService('HttpService'):JSONDecode(%q); loadstring(game:HttpGet('https://raw.githubusercontent.com/BananaMan2006/banana-lite-bedwars/main/banana-lite.lua'))()",payload)
     queueFunction(resumeCode)
     teleportQueued=true
+    print("[BananaLite] Prepared reload for teleport: "..tostring(teleportState))
 end)
 local nextChat,lastPhrase=0,nil
 module("chatspammer","Chat phrases · every 15 seconds",1,{},function()
@@ -598,15 +625,15 @@ local function remoteRequest(name,payload,gate,token)
             function(err) report(name..": response failed; awaiting inventory confirmation — "..tostring(err)) end)
     elseif type(result)=="boolean" then gate:reply(token,result,os.clock()) end
 end
-local function currentKit()
+local function hasCurrentKit(name)
     local b=state().Bedwars
-    return Core.hasKit(b and b.kit,"frost_hammer_kit") or Core.hasKit(player:GetAttribute("PlayingAsKits"),"frost_hammer_kit")
+    return Core.hasKit(b and b.kit,name) or Core.hasKit(player:GetAttribute("PlayingAsKits"),name)
 end
-local catalogIds={"wool_white","leather_chestplate","iron_chestplate","diamond_chestplate","emerald_chestplate","wood_sword","stone_sword","iron_sword","diamond_sword","emerald_sword","wood_pickaxe","stone_pickaxe","iron_pickaxe","diamond_pickaxe","wood_axe","stone_axe","iron_axe","diamond_axe","bow","arrow"}
+local function currentKit() return hasCurrentKit("frost_hammer_kit") end
+local catalogIds={"wool_white","leather_chestplate","iron_chestplate","diamond_chestplate","emerald_chestplate","wood_sword","stone_sword","iron_sword","diamond_sword","emerald_sword","wood_pickaxe","stone_pickaxe","iron_pickaxe","diamond_pickaxe","wood_axe","stone_axe","iron_axe","diamond_axe","wood_bow","arrow"}
 local function eligible(item)
-    if not item or item.disabled or item.lockedByForge then return false end
-    if item.requiresKit and #item.requiresKit>0 then return false end
-    if item.ignoredByKit and #item.ignoredByKit>0 then return false end
+    local queue=state().Game and state().Game.queueType
+    if not Core.catalogVisible(item,hasCurrentKit,queue) then return false end
     if item.ignoreAttribute and item.ignoreAttribute~="" and player:GetAttribute(item.ignoreAttribute) then return false end
     if item.requireAttribute and item.requireAttribute~="" and not player:GetAttribute(item.requireAttribute) then return false end
     if item.require and item.require.teamUpgrade then

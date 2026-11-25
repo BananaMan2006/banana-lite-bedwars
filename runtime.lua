@@ -12,7 +12,10 @@ local Input = game:GetService("UserInputService")
 local Tags = game:GetService("CollectionService")
 local Chat = game:GetService("TextChatService")
 local GuiService = game:GetService("GuiService")
+local bootDeadline=os.clock()+30
+repeat task.wait(0.1) until (game:IsLoaded() and Players.LocalPlayer) or os.clock()>=bootDeadline
 local player = Players.LocalPlayer
+assert(game:IsLoaded() and player,"BananaLite: game startup timed out; load again after joining")
 
 if shared.BananaLite then shared.BananaLite:Destroy() end
 local app = {alive=true, connections={}, modules={}, dependencies={}, version="0.1.1", purchases=0, upgrades=0}
@@ -288,7 +291,7 @@ end)
 local teleportQueued=false
 connect(player.OnTeleport,function(teleportState)
     if teleportState==Enum.TeleportState.Failed then teleportQueued=false; return end
-    if teleportState~=Enum.TeleportState.Started or teleportQueued or not app.modules.autoqueue.enabled then return end
+    if teleportQueued or not app.modules.autoqueue.enabled then return end
     local queueFunction=queue_on_teleport or queueonteleport
     if type(queueFunction)~="function" then report("AutoQueue reload is unavailable in this executor."); return end
     local enabled={}
@@ -297,6 +300,7 @@ connect(player.OnTeleport,function(teleportState)
     local resumeCode=string.format("shared.BananaLiteResume=game:GetService('HttpService'):JSONDecode(%q); loadstring(game:HttpGet('https://raw.githubusercontent.com/BananaMan2006/banana-lite-bedwars/main/banana-lite.lua'))()",payload)
     queueFunction(resumeCode)
     teleportQueued=true
+    print("[BananaLite] Prepared reload for teleport: "..tostring(teleportState))
 end)
 local nextChat,lastPhrase=0,nil
 module("chatspammer","Chat phrases · every 15 seconds",1,{},function()
@@ -385,15 +389,15 @@ local function remoteRequest(name,payload,gate,token)
             function(err) report(name..": response failed; awaiting inventory confirmation — "..tostring(err)) end)
     elseif type(result)=="boolean" then gate:reply(token,result,os.clock()) end
 end
-local function currentKit()
+local function hasCurrentKit(name)
     local b=state().Bedwars
-    return Core.hasKit(b and b.kit,"frost_hammer_kit") or Core.hasKit(player:GetAttribute("PlayingAsKits"),"frost_hammer_kit")
+    return Core.hasKit(b and b.kit,name) or Core.hasKit(player:GetAttribute("PlayingAsKits"),name)
 end
-local catalogIds={"wool_white","leather_chestplate","iron_chestplate","diamond_chestplate","emerald_chestplate","wood_sword","stone_sword","iron_sword","diamond_sword","emerald_sword","wood_pickaxe","stone_pickaxe","iron_pickaxe","diamond_pickaxe","wood_axe","stone_axe","iron_axe","diamond_axe","bow","arrow"}
+local function currentKit() return hasCurrentKit("frost_hammer_kit") end
+local catalogIds={"wool_white","leather_chestplate","iron_chestplate","diamond_chestplate","emerald_chestplate","wood_sword","stone_sword","iron_sword","diamond_sword","emerald_sword","wood_pickaxe","stone_pickaxe","iron_pickaxe","diamond_pickaxe","wood_axe","stone_axe","iron_axe","diamond_axe","wood_bow","arrow"}
 local function eligible(item)
-    if not item or item.disabled or item.lockedByForge then return false end
-    if item.requiresKit and #item.requiresKit>0 then return false end
-    if item.ignoredByKit and #item.ignoredByKit>0 then return false end
+    local queue=state().Game and state().Game.queueType
+    if not Core.catalogVisible(item,hasCurrentKit,queue) then return false end
     if item.ignoreAttribute and item.ignoreAttribute~="" and player:GetAttribute(item.ignoreAttribute) then return false end
     if item.requireAttribute and item.requireAttribute~="" and not player:GetAttribute(item.requireAttribute) then return false end
     if item.require and item.require.teamUpgrade then

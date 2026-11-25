@@ -2,7 +2,7 @@
 
 An original, small experimental client helper. It does not load CatVape, patch game functions, expand hitboxes, suppress fall damage, or change physics. The game's normal movement, combat, placement, mining, purchase and cooldown rules remain in place.
 
-**Status: prototype, not a verified replacement for all CatVape features.** The initial 30 decision-logic tests passed in the actual Roblox Luau runtime on November 24, 2026. Startup and the panel were checked live. End-to-end match results are listed in `VALIDATION.md`; logic tests do not establish that server actions succeed.
+**Status: prototype, not a verified replacement for all CatVape features.** The initial 30 decision-logic tests passed in Roblox Luau on November 24, 2026. The expanded 40-test suite passed locally in Lua 5.5.1; the final bundle also passed syntax compilation. In 16v16, all 12 dependencies loaded and bed/opponent labels rendered. Purchases, damage and cross-server reload are not confirmed. See `VALIDATION.md` for the exact limits of these checks.
 
 ## Run
 
@@ -21,7 +21,7 @@ Load after joining a BedWars match. Unload CatVape and rejoin first if it was ac
 | Bow assist | Requires an equipped bow/crossbow and ammo. Waits the configured charge time, computes a physical arc, checks for obstructions, and uses the ordinary projectile launch interface. No through-wall shots or guaranteed hits. |
 | BedESP | Simple labels on replicated beds. No animated effects. |
 | Nametags | Labels living opponents; updates twice per second and cleans up on respawn/removal. |
-| AutoQueue | Requests the current mode after match end when you are party leader. With executor teleport-queue support, reloads this script and restores enabled controls after teleport. It does not abandon a living team on your death. |
+| AutoQueue | Requests the current mode after match end when you are party leader. Attempts to reload this script and restore controls through the executor's teleport queue. Automatic restoration failed in the first test; revised handling is still unverified. It does not abandon a living team on your death. |
 | Chat phrases | Enter one phrase per line. Random selection at most every 15 seconds; empty input sends nothing. Uses ordinary filtered Roblox chat. |
 | Scaffold | Prefers wool, otherwise an inventory block; places one cell ahead through the native placer. No tower, teleport, placement-range changes or inventory fabrication. |
 | Bed breaker | Mines the visible block toward a nearby enemy bed, using the equipped tool and native reach/cooldown. Does not remove bed shields, skip covering blocks or guarantee an optimal route. |
@@ -42,6 +42,8 @@ Fly and NoFall are deliberately absent because the requested behavior would over
 ## Development
 
 `core.lua` contains deterministic decisions. `selftest.lua` tests edge cases. `runtime.lua` contains the Roblox adapter and panel. `python3 build.py` produces the single-file `banana-lite.lua` bundle without fetching dependencies.
+
+With a local Lua 5.3+ interpreter, run `lua -e 'math.atan2=math.atan; dofile("selftest.lua")(dofile("core.lua"))'` from this directory. This exercises decisions only, not Roblox adapters. `shared.BananaLite:Diagnostics()` reports dependency availability, feature errors and observed purchase/upgrade counts during a live session.
 
 Run the bundled tests without loading the UI:
 
